@@ -7,7 +7,46 @@
 import { GoogleGenAI, Type, createUserContent } from "@google/genai";
 import type { EvidenceCard, ParsedInput, Verdict } from "./types";
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-2.0-flash";
+
+async function generateWithRetry(ai: GoogleGenAI, request: any, maxRetries = 3) {
+  let attempt = 0;
+  let currentModel = PRIMARY_MODEL;
+
+  while (attempt < maxRetries) {
+    try {
+      request.model = currentModel;
+      return await ai.models.generateContent(request);
+    } catch (err: any) {
+      const isOverloaded = err.message?.includes("503") || err.message?.includes("high demand") || err.status === 503;
+      
+      if (isOverloaded) {
+        attempt++;
+        if (attempt >= maxRetries) {
+          // If we failed all retries on the primary model, try the fallback model once immediately
+          if (currentModel === PRIMARY_MODEL) {
+            console.warn(`[Gemini] ${PRIMARY_MODEL} overloaded after ${maxRetries} retries. Falling back to ${FALLBACK_MODEL}...`);
+            currentModel = FALLBACK_MODEL;
+            attempt = 0; // Reset attempts for the fallback model
+            maxRetries = 1; // Only try fallback once
+            continue;
+          }
+          throw err;
+        }
+        
+        // Exponential backoff: 1.5s, 3s, 6s
+        const waitMs = Math.pow(2, attempt - 1) * 1500;
+        console.warn(`[Gemini] Model 503 overloaded. Retrying in ${waitMs}ms (Attempt ${attempt}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      } else {
+        // Throw immediately for non-503 errors (e.g., bad API key, invalid schema)
+        throw err;
+      }
+    }
+  }
+  throw new Error("Gemini generation failed after retries.");
+}
 
 function client(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -26,8 +65,7 @@ function client(): GoogleGenAI {
  */
 export async function parseFreeformInput(raw: string): Promise<ParsedInput> {
   const ai = client();
-  const response = await ai.models.generateContent({
-    model: MODEL,
+  const response = await generateWithRetry(ai, {
     contents: `A flat-hunter in India pasted this into a rental-fraud checker. Classify it and
 extract whatever structured fields you can. Input:\n\n"""${raw}"""`,
     config: {
@@ -78,8 +116,7 @@ export async function synthesizeVerdict(
     year: "numeric",
   });
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
+  const response = await generateWithRetry(ai, {
     contents: `You are the verdict engine for LeaseOrLeave, a rental fraud detection tool for India.
 
 TODAY'S DATE (IST): ${todayIST}
@@ -158,8 +195,7 @@ export async function comparePhotosForDuplication(
     return { likelySameProperty: false, reasoning: "Could not download photos from one or both listings." };
   }
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
+  const response = await generateWithRetry(ai, {
     contents: createUserContent([
       "Set A is photos from the listing the user is checking. Set B is photos from a " +
         "different listing found elsewhere. Do Set A and Set B show the same physical " +
