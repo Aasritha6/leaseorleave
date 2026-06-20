@@ -106,44 +106,46 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
   const brokerPhone = parsed.phone ?? facts?.brokerPhone;
   const queryAddress = parsed.address ?? facts?.bodyText.slice(0, 120);
 
-  // --- 2. Community scam-report search (confirmed-real Wire action). ---
-  const redditQuery = brokerPhone
-    ? `${brokerPhone} scam OR fraud rental token`
-    : queryAddress
-    ? `${queryAddress} rental scam`
-    : null;
-  if (redditQuery) {
+  // --- 2. 99acres cross-check — major Indian property portal (Wire catalog). ---
+  if (queryAddress) {
     try {
-      const outcome = await tryRunBestAction("reddit", "search posts", { query: redditQuery, limit: 5 });
+      const outcome = await tryRunBestAction("99acres", "search properties", {
+        query: queryAddress,
+        limit: 5,
+      });
       if (!outcome.ran) {
         pushAndEmit(
           card({
-            title: "Community scam-report search",
+            title: "99acres cross-check",
             source: "unavailable",
             status: "skipped",
             summary: outcome.reason,
           })
         );
       } else if (outcome.result.status === "completed") {
-        const posts = (outcome.result.data as { posts?: { title: string; url: string; subreddit?: string }[] } | null)
-          ?.posts ?? [];
+        const listings =
+          (outcome.result.data as { properties?: { title?: string; name?: string; price?: string; url: string; contact?: string }[] } | null)
+            ?.properties ?? [];
         pushAndEmit(
           card({
-            title: "Community scam-report search",
+            title: "99acres cross-check",
             source: "wire",
-            status: posts.length > 0 ? "flagged" : "ok",
+            status: listings.length > 0 ? "flagged" : "ok",
             summary:
-              posts.length > 0
-                ? `Found ${posts.length} Reddit post(s) mentioning this number/area alongside scam-related terms. Read them yourself before deciding — Reddit mentions are a strong signal but not proof.`
-                : "No matching Reddit posts found for this phone number/area.",
-            links: posts.slice(0, 5).map((p) => ({ label: p.title, url: p.url })),
+              listings.length > 0
+                ? `Found ${listings.length} listing(s) on 99acres for this area. Compare broker contact details — a different number for the same property is a red flag.`
+                : "No matching listings found on 99acres for this area.",
+            links: listings.slice(0, 5).map((l) => ({
+              label: l.title ?? l.name ?? "View on 99acres",
+              url: l.url,
+            })),
             raw: outcome.result.data,
           })
         );
       } else {
         pushAndEmit(
           card({
-            title: "Community scam-report search",
+            title: "99acres cross-check",
             source: "wire",
             status: "failed",
             summary: `Wire job failed: ${outcome.result.error?.message ?? "unknown error"}`,
@@ -152,18 +154,62 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
       }
     } catch (err) {
       pushAndEmit(
-        card({ title: "Community scam-report search", source: "wire", status: "failed", summary: (err as Error).message })
+        card({ title: "99acres cross-check", source: "wire", status: "failed", summary: (err as Error).message })
       );
     }
-  } else {
-    pushAndEmit(
-      card({
-        title: "Community scam-report search",
-        source: "unavailable",
-        status: "skipped",
-        summary: "No phone number or address available yet to search against.",
-      })
-    );
+  }
+
+  // --- 2b. Housing.com cross-check — another major Indian portal (Wire catalog). ---
+  if (queryAddress) {
+    try {
+      const outcome = await tryRunBestAction("housing", "search listings", {
+        query: queryAddress,
+        limit: 5,
+      });
+      if (!outcome.ran) {
+        pushAndEmit(
+          card({
+            title: "Housing.com cross-check",
+            source: "unavailable",
+            status: "skipped",
+            summary: outcome.reason,
+          })
+        );
+      } else if (outcome.result.status === "completed") {
+        const listings =
+          (outcome.result.data as { listings?: { title?: string; name?: string; url: string }[] } | null)
+            ?.listings ?? [];
+        pushAndEmit(
+          card({
+            title: "Housing.com cross-check",
+            source: "wire",
+            status: listings.length > 0 ? "flagged" : "ok",
+            summary:
+              listings.length > 0
+                ? `Found ${listings.length} listing(s) on Housing.com for this area. Verify if the broker contact matches.`
+                : "No matching listings found on Housing.com for this area.",
+            links: listings.slice(0, 5).map((l) => ({
+              label: l.title ?? l.name ?? "View on Housing.com",
+              url: l.url,
+            })),
+            raw: outcome.result.data,
+          })
+        );
+      } else {
+        pushAndEmit(
+          card({
+            title: "Housing.com cross-check",
+            source: "wire",
+            status: "failed",
+            summary: `Wire job failed: ${outcome.result.error?.message ?? "unknown error"}`,
+          })
+        );
+      }
+    } catch (err) {
+      pushAndEmit(
+        card({ title: "Housing.com cross-check", source: "wire", status: "failed", summary: (err as Error).message })
+      );
+    }
   }
 
   // --- 3. Airbnb cross-check: is this "long-term rental" actually listed as a
@@ -356,7 +402,7 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
     }
   }
 
-  // --- 7. Verdict synthesis. ---
+  // --- 9. Verdict synthesis. ---
   try {
     const verdict = await synthesizeVerdict(listingContext, evidence);
     emit({ type: "verdict", data: verdict });
