@@ -246,7 +246,7 @@ This matters for judges: *"How do we know it's not just a slide?"* — every car
 ---
 
 ## Links
-Live app: https://leaseorleave.vercel.app/
+Live app: https://leaseorleave-m45x.vercel.app/
 Github: https://github.com/Aasritha6/leaseorleave
 
 ---
