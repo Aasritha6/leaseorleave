@@ -245,4 +245,10 @@ This matters for judges: *"How do we know it's not just a slide?"* — every car
 
 ---
 
+## Links
+Live app: https://leaseorleave.vercel.app/
+Github: https://github.com/Aasritha6/leaseorleave
+
+---
+
 *Made for the Anakin AI Hackathon 2026. Because finding a home shouldn't be a gamble.*
