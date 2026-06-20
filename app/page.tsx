@@ -43,9 +43,10 @@ function riskBarColor(score: number) {
 const PLACEHOLDER_CHECKS = [
   "Scraping listing page…",
   "Checking 99acres…",
-  "Checking Housing.com…",
-  "Checking Airbnb…",
+  "Checking MagicBricks…",
   "Checking Square Yards…",
+  "Checking NoBroker…",
+  "Checking Housing.com…",
   "Running web search…",
   "Truecaller lookup…",
   "Gemini synthesising verdict…",
@@ -361,14 +362,15 @@ export default function Home() {
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: "0.5rem" }}>
                 {[
-                  { label: "URL Scrape",         note: "Any listing URL",       cls: "source-scraper" },
-                  { label: "Wire → 99acres",      note: "India listings",        cls: "source-wire" },
-                  { label: "Wire → Housing.com",  note: "India listings",        cls: "source-wire" },
-                  { label: "Wire → Airbnb",       note: "Short-stay check",      cls: "source-wire" },
-                  { label: "Wire → Square Yards", note: "India cross-check",     cls: "source-wire" },
-                  { label: "Web Search",          note: "Open-web references",   cls: "source-search" },
-                  { label: "Truecaller Scrape",   note: "Phone spam lookup",     cls: "source-scraper" },
-                  { label: "Gemini Vision",       note: "Photo duplication",     cls: "source-gemini" },
+                  { label: "URL Scrape",          note: "Any listing URL",       cls: "source-scraper" },
+                  { label: "99acres",              note: "India cross-check",     cls: "source-scraper" },
+                  { label: "MagicBricks",          note: "India cross-check",     cls: "source-scraper" },
+                  { label: "Square Yards",         note: "India cross-check",     cls: "source-scraper" },
+                  { label: "NoBroker",             note: "Zero-brokerage check",  cls: "source-scraper" },
+                  { label: "Housing.com",          note: "India cross-check",     cls: "source-scraper" },
+                  { label: "Web Search",           note: "Open-web references",   cls: "source-search" },
+                  { label: "Truecaller Scrape",    note: "Phone spam lookup",     cls: "source-scraper" },
+                  { label: "Gemini Vision",        note: "Photo duplication",     cls: "source-gemini" },
                 ].map((item) => (
                   <div key={item.label} style={{ padding: "0.5rem 0.75rem", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8 }}>
                     <span className={`source-badge ${item.cls}`}>{item.label}</span>

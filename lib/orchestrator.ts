@@ -216,8 +216,79 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
     }
   }
 
-  // --- 4. Open-web cross-reference (the realistic stand-in for "is this listing
-  //        cloned on another platform" — see lib/anakin.ts). ---
+  // --- 5. NoBroker cross-check — India's largest zero-brokerage rental platform ---
+  if (queryAddress) {
+    try {
+      const city = (parsed.city ?? "bangalore").toLowerCase().replace(/\s+/g, "-");
+      const nbUrl = `https://www.nobroker.in/property/residential/rent/${encodeURIComponent(city)}`;
+      const scrape = await urlScrape(nbUrl, { useBrowser: true, country: "in" });
+      if (scrape.status === "completed" && scrape.markdown) {
+        const md = scrape.markdown.slice(0, 3000).toLowerCase();
+        const brokerNumberMentioned = brokerPhone ? md.includes(brokerPhone.replace(/\D/g, "").slice(-10)) : false;
+        pushAndEmit(
+          card({
+            title: "NoBroker cross-check",
+            source: "scraper",
+            status: brokerNumberMentioned ? "flagged" : "ok",
+            summary: brokerNumberMentioned
+              ? `Broker's phone number appears in NoBroker listings for ${parsed.city ?? "this area"}. If the rent or terms differ from what you were told, that's a strong red flag.`
+              : `NoBroker checked for ${parsed.city ?? "this area"}. No conflicting contact numbers in results. Compare listed prices to spot over/under-pricing.`,
+            links: [{ label: `Browse NoBroker — ${parsed.city ?? "India"}`, url: nbUrl }],
+          })
+        );
+      } else {
+        pushAndEmit(
+          card({
+            title: "NoBroker cross-check",
+            source: "scraper",
+            status: "failed",
+            summary: `Could not load NoBroker (${scrape.error ?? "page blocked or timeout"}). Check manually.`,
+            links: [{ label: "Open NoBroker manually", url: nbUrl }],
+          })
+        );
+      }
+    } catch (err) {
+      pushAndEmit(card({ title: "NoBroker cross-check", source: "scraper", status: "failed", summary: (err as Error).message }));
+    }
+  }
+
+  // --- 6. Housing.com cross-check — PropTiger / REA Group Indian portal ---
+  if (queryAddress) {
+    try {
+      const city = (parsed.city ?? "bangalore").toLowerCase().replace(/\s+/g, "-");
+      const hcUrl = `https://housing.com/in/rent/${encodeURIComponent(city)}-multistorey-apartment-flats`;
+      const scrape = await urlScrape(hcUrl, { useBrowser: true, country: "in" });
+      if (scrape.status === "completed" && scrape.markdown) {
+        const md = scrape.markdown.slice(0, 3000).toLowerCase();
+        const brokerNumberMentioned = brokerPhone ? md.includes(brokerPhone.replace(/\D/g, "").slice(-10)) : false;
+        pushAndEmit(
+          card({
+            title: "Housing.com cross-check",
+            source: "scraper",
+            status: brokerNumberMentioned ? "flagged" : "ok",
+            summary: brokerNumberMentioned
+              ? `Broker's phone number found in Housing.com listings for this area. Verify whether the same property appears with different pricing or owner details.`
+              : `Housing.com checked for ${parsed.city ?? "this area"}. No conflicting contact numbers found. Use the link to manually compare active listings.`,
+            links: [{ label: `Browse Housing.com — ${parsed.city ?? "India"}`, url: hcUrl }],
+          })
+        );
+      } else {
+        pushAndEmit(
+          card({
+            title: "Housing.com cross-check",
+            source: "scraper",
+            status: "failed",
+            summary: `Could not load Housing.com (${scrape.error ?? "page blocked or timeout"}). Check manually.`,
+            links: [{ label: "Open Housing.com manually", url: hcUrl }],
+          })
+        );
+      }
+    } catch (err) {
+      pushAndEmit(card({ title: "Housing.com cross-check", source: "scraper", status: "failed", summary: (err as Error).message }));
+    }
+  }
+
+  // --- 7. Open-web cross-reference ---
   if (brokerPhone || queryAddress) {
     try {
       const results = await webSearch(
