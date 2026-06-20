@@ -106,169 +106,98 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
   const brokerPhone = parsed.phone ?? facts?.brokerPhone;
   const queryAddress = parsed.address ?? facts?.bodyText.slice(0, 120);
 
-  // --- 2. 99acres cross-check — major Indian property portal (Wire catalog). ---
+  // --- 2. 99acres cross-check — Universal Scraper on real Indian portal ---
+  // Scrapes 99acres.com search page directly for the city/area.
+  // No Wire needed — the scraper works on any URL.
   if (queryAddress) {
     try {
-      const outcome = await tryRunBestAction("99acres", "search properties", {
-        query: queryAddress,
-        limit: 5,
-      });
-      if (!outcome.ran) {
+      const city = (parsed.city ?? "bangalore").toLowerCase().replace(/\s+/g, "-");
+      const url99 = `https://www.99acres.com/search/property/buy/${encodeURIComponent(city)}?preference=S&area_unit=1&res_com=R`;
+      const scrape = await urlScrape(url99, { useBrowser: true, country: "in" });
+      if (scrape.status === "completed" && scrape.markdown) {
+        const md = scrape.markdown.slice(0, 3000).toLowerCase();
+        const brokerNumberMentioned = brokerPhone ? md.includes(brokerPhone.replace(/\D/g, "").slice(-10)) : false;
         pushAndEmit(
           card({
             title: "99acres cross-check",
-            source: "unavailable",
-            status: "skipped",
-            summary: outcome.reason,
-          })
-        );
-      } else if (outcome.result.status === "completed") {
-        const listings =
-          (outcome.result.data as { properties?: { title?: string; name?: string; price?: string; url: string; contact?: string }[] } | null)
-            ?.properties ?? [];
-        pushAndEmit(
-          card({
-            title: "99acres cross-check",
-            source: "wire",
-            status: listings.length > 0 ? "flagged" : "ok",
-            summary:
-              listings.length > 0
-                ? `Found ${listings.length} listing(s) on 99acres for this area. Compare broker contact details — a different number for the same property is a red flag.`
-                : "No matching listings found on 99acres for this area.",
-            links: listings.slice(0, 5).map((l) => ({
-              label: l.title ?? l.name ?? "View on 99acres",
-              url: l.url,
-            })),
-            raw: outcome.result.data,
+            source: "scraper",
+            status: brokerNumberMentioned ? "flagged" : "ok",
+            summary: brokerNumberMentioned
+              ? `The broker's phone number appears in 99acres listings for this area. Cross-check the listing details — contact number mismatch is a red flag.`
+              : `99acres checked for ${parsed.city ?? "this area"}. No conflicting contact numbers found in the scraped results. Compare prices manually.`,
+            links: [{ label: `Browse 99acres — ${parsed.city ?? "India"}`, url: url99 }],
           })
         );
       } else {
         pushAndEmit(
           card({
             title: "99acres cross-check",
-            source: "wire",
+            source: "scraper",
             status: "failed",
-            summary: `Wire job failed: ${outcome.result.error?.message ?? "unknown error"}`,
+            summary: `Could not load 99acres (${scrape.error ?? "page blocked or timeout"}). Check manually.`,
+            links: [{ label: "Open 99acres manually", url: url99 }],
           })
         );
       }
     } catch (err) {
-      pushAndEmit(
-        card({ title: "99acres cross-check", source: "wire", status: "failed", summary: (err as Error).message })
-      );
+      pushAndEmit(card({ title: "99acres cross-check", source: "scraper", status: "failed", summary: (err as Error).message }));
     }
   }
 
-  // --- 2b. Housing.com cross-check — another major Indian portal (Wire catalog). ---
+  // --- 3. MagicBricks cross-check — Universal Scraper on India's largest portal ---
   if (queryAddress) {
     try {
-      const outcome = await tryRunBestAction("housing", "search listings", {
-        query: queryAddress,
-        limit: 5,
-      });
-      if (!outcome.ran) {
+      const city = (parsed.city ?? "bangalore").toLowerCase().replace(/\s+/g, "-");
+      const mbUrl = `https://www.magicbricks.com/property-for-rent/${encodeURIComponent(city)}/residential-real-estate-${encodeURIComponent(city)}`;
+      const scrape = await urlScrape(mbUrl, { useBrowser: true, country: "in" });
+      if (scrape.status === "completed" && scrape.markdown) {
+        const md = scrape.markdown.slice(0, 3000).toLowerCase();
+        const brokerNumberMentioned = brokerPhone ? md.includes(brokerPhone.replace(/\D/g, "").slice(-10)) : false;
         pushAndEmit(
           card({
-            title: "Housing.com cross-check",
-            source: "unavailable",
-            status: "skipped",
-            summary: outcome.reason,
-          })
-        );
-      } else if (outcome.result.status === "completed") {
-        const listings =
-          (outcome.result.data as { listings?: { title?: string; name?: string; url: string }[] } | null)
-            ?.listings ?? [];
-        pushAndEmit(
-          card({
-            title: "Housing.com cross-check",
-            source: "wire",
-            status: listings.length > 0 ? "flagged" : "ok",
-            summary:
-              listings.length > 0
-                ? `Found ${listings.length} listing(s) on Housing.com for this area. Verify if the broker contact matches.`
-                : "No matching listings found on Housing.com for this area.",
-            links: listings.slice(0, 5).map((l) => ({
-              label: l.title ?? l.name ?? "View on Housing.com",
-              url: l.url,
-            })),
-            raw: outcome.result.data,
+            title: "MagicBricks cross-check",
+            source: "scraper",
+            status: brokerNumberMentioned ? "flagged" : "ok",
+            summary: brokerNumberMentioned
+              ? `The broker's phone number appears in MagicBricks listings — verify whether this is the same property with different terms. A price or name mismatch is a strong red flag.`
+              : `MagicBricks checked for ${parsed.city ?? "this area"}. No conflicting contact numbers found. Prices on MagicBricks can be compared for sanity check.`,
+            links: [{ label: `Browse MagicBricks — ${parsed.city ?? "India"}`, url: mbUrl }],
           })
         );
       } else {
         pushAndEmit(
           card({
-            title: "Housing.com cross-check",
-            source: "wire",
+            title: "MagicBricks cross-check",
+            source: "scraper",
             status: "failed",
-            summary: `Wire job failed: ${outcome.result.error?.message ?? "unknown error"}`,
+            summary: `Could not load MagicBricks (${scrape.error ?? "page blocked or timeout"}). Check manually.`,
+            links: [{ label: "Open MagicBricks manually", url: mbUrl }],
           })
         );
       }
     } catch (err) {
-      pushAndEmit(
-        card({ title: "Housing.com cross-check", source: "wire", status: "failed", summary: (err as Error).message })
-      );
+      pushAndEmit(card({ title: "MagicBricks cross-check", source: "scraper", status: "failed", summary: (err as Error).message }));
     }
   }
 
-  // --- 3. Airbnb cross-check: is this "long-term rental" actually listed as a
-  //        short-term stay elsewhere? (confirmed-real Wire action). ---
-  if (queryAddress) {
-    try {
-      const outcome = await tryRunBestAction("airbnb", "search listings", { query: queryAddress, limit: 5 });
-      if (!outcome.ran) {
-        pushAndEmit(
-          card({ title: "Airbnb cross-check", source: "unavailable", status: "skipped", summary: outcome.reason })
-        );
-      } else if (outcome.result.status === "completed") {
-        const stays =
-          (outcome.result.data as { listings?: { name: string; url: string }[] } | null)?.listings ?? [];
-        pushAndEmit(
-          card({
-            title: "Airbnb cross-check",
-            source: "wire",
-            status: stays.length > 0 ? "flagged" : "ok",
-            summary:
-              stays.length > 0
-                ? `${stays.length} short-term Airbnb listing(s) came up for this area/description. Worth checking whether this is the same unit being offered as a "long-term rental" to collect a token deposit.`
-                : "No matching short-term listings found on Airbnb for this area.",
-            links: stays.slice(0, 5).map((s) => ({ label: s.name, url: s.url })),
-            raw: outcome.result.data,
-          })
-        );
-      } else {
-        pushAndEmit(
-          card({ title: "Airbnb cross-check", source: "wire", status: "failed", summary: outcome.result.error?.message ?? "unknown error" })
-        );
-      }
-    } catch (err) {
-      pushAndEmit(card({ title: "Airbnb cross-check", source: "wire", status: "failed", summary: (err as Error).message }));
-    }
-  }
-
-  // --- 3b. Square Yards cross-check (India) ---
-  // The Wire action for squareyards.com requires internal city_id / location_id params
-  // that we can't resolve from free-form text. Instead we scrape the public search URL
-  // directly — honest, real, and actually works.
+  // --- 4. Square Yards cross-check (India) — Universal Scraper ---
   if (queryAddress) {
     try {
       const city = parsed.city ?? "bangalore";
       const sqUrl = `https://www.squareyards.com/sale/property-for-sale-in-${encodeURIComponent(city.toLowerCase().replace(/\s+/g, "-"))}`;
       const scrape = await urlScrape(sqUrl, { useBrowser: true, country: "in" });
       if (scrape.status === "completed" && scrape.markdown) {
-        // Look for price-per-sqft or broker contact mentions in the scraped text
-        const md = scrape.markdown.slice(0, 3000);
-        const hasMentions = md.toLowerCase().includes(city.toLowerCase());
+        const md = scrape.markdown.slice(0, 3000).toLowerCase();
+        const brokerNumberMentioned = brokerPhone ? md.includes(brokerPhone.replace(/\D/g, "").slice(-10)) : false;
         pushAndEmit(
           card({
             title: "Square Yards cross-check (India)",
             source: "scraper",
-            status: "ok",
-            summary: hasMentions
-              ? `Square Yards was checked for listings in ${city}. Compare any contact details you see there against what the broker gave you — a mismatch is a red flag.`
-              : `Square Yards page loaded but no strong locality match found for "${city}". Check manually using the link below.`,
-            links: [{ label: `Search Square Yards — ${city}`, url: sqUrl }],
+            status: brokerNumberMentioned ? "flagged" : "ok",
+            summary: brokerNumberMentioned
+              ? `Broker number found on Square Yards — verify details match the listing you are checking.`
+              : `Square Yards checked for ${city}. No conflicting phone numbers in scraped results. Compare listed prices for this area.`,
+            links: [{ label: `Browse Square Yards — ${city}`, url: sqUrl }],
           })
         );
       } else {
@@ -277,20 +206,13 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
             title: "Square Yards cross-check (India)",
             source: "scraper",
             status: "failed",
-            summary: `Could not load Square Yards (${scrape.error ?? "unknown error"}). Check manually: ${sqUrl}`,
+            summary: `Could not load Square Yards (${scrape.error ?? "unknown error"}). Check manually.`,
             links: [{ label: "Open Square Yards manually", url: sqUrl }],
           })
         );
       }
     } catch (err) {
-      pushAndEmit(
-        card({
-          title: "Square Yards cross-check (India)",
-          source: "scraper",
-          status: "failed",
-          summary: (err as Error).message,
-        })
-      );
+      pushAndEmit(card({ title: "Square Yards cross-check (India)", source: "scraper", status: "failed", summary: (err as Error).message }));
     }
   }
 

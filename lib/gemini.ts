@@ -69,18 +69,29 @@ export async function synthesizeVerdict(
     )
     .join("\n\n");
 
+  // Inject the real current date (IST) so Gemini never misclassifies today's
+  // listing date as "suspicious future date".
+  const todayIST = new Date().toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
   const response = await ai.models.generateContent({
     model: MODEL,
-    contents: `You are the verdict engine for LeaseOrLeave, a tool that protects Indian renters
-from token-deposit rental scams. You are given (a) what the user is looking at, and
-(b) a list of evidence cards from real checks that were actually run — Reddit scam-report
-search, Airbnb cross-listing check, generic web search, and/or a scrape of the listing
-page itself. Some checks may be marked "skipped" or "failed" because the underlying data
-source genuinely wasn't available — treat those as missing information, NOT as red flags,
-and say so plainly if there isn't enough evidence either way.
+    contents: `You are the verdict engine for LeaseOrLeave, a rental fraud detection tool for India.
 
-Do not invent facts that are not present in the evidence below. If the evidence is thin,
-return verdict "INCONCLUSIVE" and say what's missing rather than guessing.
+TODAY'S DATE (IST): ${todayIST}
+Use this to evaluate any dates mentioned in listings or evidence. A listing posted today
+or recently is NORMAL — do NOT flag it as suspicious. Only flag dates that are clearly
+weeks or months in the future relative to today.
+
+You are given evidence from real checks: listing page scrape, cross-platform searches
+(99acres, MagicBricks, Square Yards), web search, and Truecaller phone lookup.
+Checks marked "skipped" or "failed" mean data was unavailable — treat as missing info,
+NOT red flags. Do not invent facts not in the evidence.
+If evidence is thin → return "INCONCLUSIVE" and say what is missing.
 
 LISTING CONTEXT:
 ${listingContext}
