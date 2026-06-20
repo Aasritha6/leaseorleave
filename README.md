@@ -5,8 +5,6 @@
 
 ---
 
-## 🏠 Project Title
-
 **LeaseOrLeave: Real-Time Rental Fraud Detection for Indian Renters**
 
 Built for the **Anakin AI Hackathon 2026** · Powered exclusively by **Gemini AI + Anakin Universal Scraper + Anakin Search API**
@@ -192,24 +190,6 @@ POST /api/verify   → SSE stream: parsed → evidence[] → verdict → done
                      Calls: Gemini (parse) + Anakin Scraper 
                           + Anakin Search + Gemini (verdict)
 ```
-
----
-
-## 🎭 The 3-Minute Demo Script
-
-> **Scenario:** You're moving to Visakhapatnam. You find a 2BHK in Waltair Main Road for ₹12,000/month. Market rate: ₹20,000. The broker is pushing hard for a ₹25,000 token today.
-
-1. Paste the MagicBricks URL into LeaseOrLeave
-2. **Instant verdict streams:** `⚠ HIGH RISK — DO NOT PAY`
-3. Evidence cards appear one by one:
-   - 📸 *"Listing page scraped — contact number extracted: +91-98XXX"*
-   - 🚨 *"99acres: Same area listed under a completely different broker name — contact mismatch"*
-   - 🌐 *"Open web: consumer complaint found on consumercomplaints.in mentioning this number"*
-   - 📱 *"Truecaller: Number flagged as 'Spam: Scam/Fraud' by 40 users"*
-4. Gemini synthesizes: *"4 critical red flags. Rent 40% below market — classic bait pricing. Do not pay."*
-
-**Judge reaction:** *"I would use this tomorrow."*
-
 ---
 
 ## 🏆 What Makes This Genuinely Different
