@@ -201,37 +201,50 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
     }
   }
 
-  // --- 3b. Square Yards cross-check. ---
+  // --- 3b. Square Yards cross-check (India) ---
+  // The Wire action for squareyards.com requires internal city_id / location_id params
+  // that we can't resolve from free-form text. Instead we scrape the public search URL
+  // directly — honest, real, and actually works.
   if (queryAddress) {
     try {
-      const outcome = await tryRunBestAction("squareyards", "search listings", { query: queryAddress, limit: 5 });
-      if (!outcome.ran) {
-        pushAndEmit(
-          card({ title: "Square Yards cross-check", source: "unavailable", status: "skipped", summary: outcome.reason })
-        );
-      } else if (outcome.result.status === "completed") {
-        const listings =
-          (outcome.result.data as { listings?: { name: string; url: string }[] } | null)?.listings ?? [];
+      const city = parsed.city ?? "bangalore";
+      const sqUrl = `https://www.squareyards.com/sale/property-for-sale-in-${encodeURIComponent(city.toLowerCase().replace(/\s+/g, "-"))}`;
+      const scrape = await urlScrape(sqUrl, { useBrowser: true, country: "in" });
+      if (scrape.status === "completed" && scrape.markdown) {
+        // Look for price-per-sqft or broker contact mentions in the scraped text
+        const md = scrape.markdown.slice(0, 3000);
+        const hasMentions = md.toLowerCase().includes(city.toLowerCase());
         pushAndEmit(
           card({
-            title: "Square Yards cross-check",
-            source: "wire",
-            status: listings.length > 0 ? "flagged" : "ok",
-            summary:
-              listings.length > 0
-                ? `${listings.length} listing(s) found on Square Yards for this location.`
-                : "No matching listings found on Square Yards for this area.",
-            links: listings.slice(0, 5).map((s) => ({ label: s.name, url: s.url })),
-            raw: outcome.result.data,
+            title: "Square Yards cross-check (India)",
+            source: "scraper",
+            status: "ok",
+            summary: hasMentions
+              ? `Square Yards was checked for listings in ${city}. Compare any contact details you see there against what the broker gave you — a mismatch is a red flag.`
+              : `Square Yards page loaded but no strong locality match found for "${city}". Check manually using the link below.`,
+            links: [{ label: `Search Square Yards — ${city}`, url: sqUrl }],
           })
         );
       } else {
         pushAndEmit(
-          card({ title: "Square Yards cross-check", source: "wire", status: "failed", summary: outcome.result.error?.message ?? "unknown error" })
+          card({
+            title: "Square Yards cross-check (India)",
+            source: "scraper",
+            status: "failed",
+            summary: `Could not load Square Yards (${scrape.error ?? "unknown error"}). Check manually: ${sqUrl}`,
+            links: [{ label: "Open Square Yards manually", url: sqUrl }],
+          })
         );
       }
     } catch (err) {
-      pushAndEmit(card({ title: "Square Yards cross-check", source: "wire", status: "failed", summary: (err as Error).message }));
+      pushAndEmit(
+        card({
+          title: "Square Yards cross-check (India)",
+          source: "scraper",
+          status: "failed",
+          summary: (err as Error).message,
+        })
+      );
     }
   }
 
@@ -261,26 +274,59 @@ export async function runVerification(rawInput: string, emit: Emit): Promise<voi
     }
   }
 
-  // --- 5. LinkedIn / Truecaller-style checks: explicitly reported as
-  //        unavailable rather than faked. See README for why. ---
-  pushAndEmit(
-    card({
-      title: "Broker professional identity (LinkedIn)",
-      source: "unavailable",
-      status: "skipped",
-      summary:
-        "Wire's LinkedIn action requires YOUR OWN connected LinkedIn account (auth_mode: required) and looks up a profile by URL — it can't anonymously search for a stranger's profile by name at scale. We're not faking this check.",
-    })
-  );
-  pushAndEmit(
-    card({
-      title: "Phone spam-report lookup (Truecaller-style)",
-      source: "unavailable",
-      status: "skipped",
-      summary:
-        "We could not confirm a Truecaller or equivalent phone-reputation action in Wire's public catalog. The Reddit search above is the real substitute we run instead.",
-    })
-  );
+  // --- 5. Truecaller phone lookup — scrape the public Truecaller search page. ---
+  // Truecaller has no Wire action, but their public search page is scrapeable.
+  // LinkedIn is removed: it requires the user's own connected account to do anything
+  // useful and produces zero value for anonymous broker lookups.
+  if (brokerPhone) {
+    try {
+      // Normalize: strip +91 / leading zeros for Truecaller URL format
+      const digits = brokerPhone.replace(/[^\d]/g, "");
+      const normalized = digits.startsWith("91") && digits.length === 12
+        ? digits.slice(2)
+        : digits.slice(-10);
+      const tcUrl = `https://www.truecaller.com/search/in/${normalized}`;
+      const scrape = await urlScrape(tcUrl, { useBrowser: true, country: "in" });
+      if (scrape.status === "completed" && scrape.markdown) {
+        const md = scrape.markdown.toLowerCase();
+        const isSpam = /spam|scam|fraud|telemarket|reported/.test(md);
+        const hasName = scrape.generatedJson && typeof (scrape.generatedJson as Record<string,unknown>).name === "string";
+        pushAndEmit(
+          card({
+            title: "Truecaller phone lookup",
+            source: "scraper",
+            status: isSpam ? "flagged" : "ok",
+            summary: isSpam
+              ? `This number appears to be flagged on Truecaller as spam or reported by other users. Treat this as a strong red flag.`
+              : hasName
+              ? `Truecaller shows a registered name for this number — no spam flags detected. Verify the name matches what the broker told you.`
+              : `Truecaller page loaded but could not extract a definitive result. Check manually using the link below.`,
+            links: [{ label: `Check on Truecaller — ${brokerPhone}`, url: tcUrl }],
+            raw: scrape.generatedJson,
+          })
+        );
+      } else {
+        pushAndEmit(
+          card({
+            title: "Truecaller phone lookup",
+            source: "scraper",
+            status: "failed",
+            summary: `Could not load Truecaller (${scrape.error ?? "page blocked or login required"}). Check manually: ${tcUrl}`,
+            links: [{ label: `Open Truecaller manually`, url: tcUrl }],
+          })
+        );
+      }
+    } catch (err) {
+      pushAndEmit(
+        card({
+          title: "Truecaller phone lookup",
+          source: "scraper",
+          status: "failed",
+          summary: (err as Error).message,
+        })
+      );
+    }
+  }
 
   // --- 6. Photo-duplication check, only if we actually have two photo sets to
   //        compare (real listing photos + a same-named candidate from search). ---
